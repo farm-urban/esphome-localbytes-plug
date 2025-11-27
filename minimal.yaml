@@ -33,6 +33,8 @@ esp8266:
   restore_from_flash: true
   early_pin_init: false
 
+factory_reset:
+
 logger:
 
 ota:
