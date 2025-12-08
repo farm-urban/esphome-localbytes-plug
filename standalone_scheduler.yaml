@@ -1,0 +1,239 @@
+###############################################
+# Standalone daily schedule + backup logic
+###############################################
+
+globals:
+  # On/off times in minutes after midnight
+  # Defaults: 06:00 (360) and 22:00 (1320)
+  - id: on_time_minutes
+    type: int
+    restore_value: true
+    initial_value: "360"
+
+  - id: off_time_minutes
+    type: int
+    restore_value: true
+    initial_value: "1320"
+
+  # Wi-Fi/API status tracking
+  - id: wifi_connected
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  - id: wifi_off_minutes
+    type: int
+    restore_value: no
+    initial_value: "0"
+
+  # Internal flag: backup schedule currently active
+  - id: backup_active
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  # To avoid re-running schedule in the same minute
+  - id: last_schedule_minute
+    type: int
+    restore_value: no
+    initial_value: "-1"
+
+###############################################
+# User-visible switches
+###############################################
+
+switch:
+  # Manual "always schedule" mode
+  - platform: template
+    name: "Standalone Mode"
+    id: standalone_mode
+    icon: "mdi:timer-outline"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  # Enable learning + automatic fallback
+  - platform: template
+    name: "Standalone Backup"
+    id: standalone_backup
+    icon: "mdi:backup-restore"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+###############################################
+# Time configuration (minutes after midnight)
+###############################################
+
+number:
+  # --------- ON TIME (HH:MM) ---------
+  - platform: template
+    name: "Standalone On Hour"
+    id: on_hour_number
+    entity_category: config
+    min_value: 0
+    max_value: 23
+    step: 1
+    lambda: |-
+      // Convert minutes after midnight -> hour
+      return id(on_time_minutes) / 60;
+    set_action:
+      lambda: |-
+        // Update only the hour part, keep minutes
+        int minutes = id(on_time_minutes) % 60;
+        id(on_time_minutes) = ((int)x) * 60 + minutes;
+
+  - platform: template
+    name: "Standalone On Minute"
+    id: on_minute_number
+    entity_category: config
+    min_value: 0
+    max_value: 59
+    step: 1
+    lambda: |-
+      // Convert minutes after midnight -> minute
+      return id(on_time_minutes) % 60;
+    set_action:
+      lambda: |-
+        // Update only the minute part, keep hour
+        int hours = id(on_time_minutes) / 60;
+        id(on_time_minutes) = hours * 60 + (int)x;
+
+  # --------- OFF TIME (HH:MM) ---------
+  - platform: template
+    name: "Standalone Off Hour"
+    id: off_hour_number
+    entity_category: config
+    min_value: 0
+    max_value: 23
+    step: 1
+    lambda: |-
+      return id(off_time_minutes) / 60;
+    set_action:
+      lambda: |-
+        int minutes = id(off_time_minutes) % 60;
+        id(off_time_minutes) = ((int)x) * 60 + minutes;
+
+  - platform: template
+    name: "Standalone Off Minute"
+    id: off_minute_number
+    entity_category: config
+    min_value: 0
+    max_value: 59
+    step: 1
+    lambda: |-
+      return id(off_time_minutes) % 60;
+    set_action:
+      lambda: |-
+        int hours = id(off_time_minutes) / 60;
+        id(off_time_minutes) = hours * 60 + (int)x;
+
+###############################################
+# Wi-Fi / API tracking
+###############################################
+
+wifi:
+  on_connect:
+    - lambda: |-
+        id(wifi_connected) = true;
+        id(wifi_off_minutes) = 0;
+        // When network/API is back, stop automatic backup control
+        id(backup_active) = false;
+
+  on_disconnect:
+    - lambda: |-
+        id(wifi_connected) = false;
+
+###############################################
+# Intervals:
+#   - check offline duration (5 min)
+#   - run daily scheduler (10 s)
+###############################################
+
+interval:
+  # Check for 2h+ offline to activate backup schedule
+  - interval: 5min
+    then:
+      - lambda: |-
+          bool online = id(wifi_connected);
+
+          // Also require ESPHome API (HA) to be connected
+          if (!id(api_status).state) {
+            online = false;
+          }
+
+          if (online) {
+            id(wifi_off_minutes) = 0;
+          } else {
+            id(wifi_off_minutes) += 5;
+            if (id(wifi_off_minutes) >= 120 && id(standalone_backup).state) {
+              // Start using the learned schedule automatically
+              id(backup_active) = true;
+            }
+          }
+
+  # Run daily schedule
+  - interval: 10s
+    then:
+      - lambda: |-
+          auto t = id(ha_time).now();
+          if (!t.is_valid()) {
+            return;
+          }
+
+          int minutes_now = t.hour * 60 + t.minute;
+
+          // Only act once per minute
+          if (minutes_now == id(last_schedule_minute)) {
+            return;
+          }
+          id(last_schedule_minute) = minutes_now;
+
+          bool scheduler_active = id(standalone_mode).state || id(backup_active);
+          if (!scheduler_active) {
+            return;
+          }
+
+          if (minutes_now == id(on_time_minutes)) {
+            id(relay).turn_on();
+          } else if (minutes_now == id(off_time_minutes)) {
+            id(relay).turn_off();
+          }
+
+###############################################
+# Scripts to learn on/off times from HA
+###############################################
+
+script:
+  - id: record_relay_on_time
+    then:
+      - lambda: |-
+          // Only learn when:
+          //  - backup feature is enabled
+          //  - not in manual standalone_mode
+          //  - backup schedule not currently taking over
+          //  - Wi-Fi + API are up (i.e. HA is in control)
+          if (!id(standalone_backup).state) return;
+          if (id(standalone_mode).state) return;
+          if (id(backup_active)) return;
+          if (!id(wifi_connected)) return;
+          if (!id(api_status).state) return;
+
+          auto t = id(ha_time).now();
+          if (!t.is_valid()) return;
+
+          int minutes_now = t.hour * 60 + t.minute;
+          id(on_time_minutes) = minutes_now;
+
+  - id: record_relay_off_time
+    then:
+      - lambda: |-
+          if (!id(standalone_backup).state) return;
+          if (id(standalone_mode).state) return;
+          if (id(backup_active)) return;
+          if (!id(wifi_connected)) return;
+          if (!id(api_status).state) return;
+
+          auto t = id(ha_time).now();
+          if (!t.is_valid()) return;
+
+          int minutes_now = t.hour * 60 + t.minute;
+          id(off_time_minutes) = minutes_now;

@@ -1,5 +1,6 @@
 packages:
   minimal: !include minimal.yaml
+  standalone: !include standalone_scheduler.yaml
 
 esphome:
   on_boot:
@@ -20,6 +21,7 @@ wifi:
 time:
   - platform: homeassistant
     timezone: Europe/London
+    id: ha_time
 
 api:
   services:
@@ -103,6 +105,7 @@ binary_sensor:
 
   - platform: status
     name: "Server Status"
+    id: api_status
 
 switch:
   # Relay (As Switch)
@@ -118,8 +121,10 @@ switch:
           switch.is_off: disable_led
         then:
           light.turn_on: led
+      script.execute: record_relay_on_time
     on_turn_off:
       - light.turn_off: led
+      - script.execute: record_relay_off_time
 
   - platform: template
     name: "Disable LED"
