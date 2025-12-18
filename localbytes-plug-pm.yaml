@@ -116,12 +116,12 @@ switch:
     id: relay
     restore_mode: "${default_state}"
     on_turn_on:
-      if:
+      - if:
         condition:
           switch.is_off: disable_led
         then:
           light.turn_on: led
-      script.execute: record_relay_on_time
+      - script.execute: record_relay_on_time
     on_turn_off:
       - light.turn_off: led
       - script.execute: record_relay_off_time
@@ -135,7 +135,7 @@ switch:
     on_turn_on:
       - if:
           condition:
-            lambda: 'return id(setupComplete) == true;'
+            lambda: "return id(setupComplete) == true;"
           then:
             #Flash twice
             - light.turn_off: led
@@ -151,7 +151,7 @@ switch:
     on_turn_off:
       - if:
           condition:
-            lambda: 'return id(setupComplete) == true;'
+            lambda: "return id(setupComplete) == true;"
           then:
             #Flash twice
             - light.turn_on: led
@@ -178,7 +178,7 @@ switch:
     on_turn_on:
       - if:
           condition:
-            lambda: 'return id(setupComplete) == true;'
+            lambda: "return id(setupComplete) == true;"
           then:
             #Flash thrice
             - light.turn_off: led
@@ -204,7 +204,7 @@ switch:
     on_turn_off:
       - if:
           condition:
-            lambda: 'return id(setupComplete) == true;'
+            lambda: "return id(setupComplete) == true;"
           then:
             #Flash thrice
             - light.turn_on: led
