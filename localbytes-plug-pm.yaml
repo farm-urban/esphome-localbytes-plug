@@ -117,10 +117,10 @@ switch:
     restore_mode: "${default_state}"
     on_turn_on:
       - if:
-        condition:
-          switch.is_off: disable_led
-        then:
-          light.turn_on: led
+          condition:
+            switch.is_off: disable_led
+          then:
+            - light.turn_on: led
       - script.execute: record_relay_on_time
     on_turn_off:
       - light.turn_off: led
