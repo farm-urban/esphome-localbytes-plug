@@ -69,6 +69,7 @@ number:
     name: "Standalone On Hour"
     id: on_hour_number
     entity_category: config
+    mode: box
     min_value: 0
     max_value: 23
     step: 1
@@ -85,6 +86,7 @@ number:
     name: "Standalone On Minute"
     id: on_minute_number
     entity_category: config
+    mode: box
     min_value: 0
     max_value: 59
     step: 1
@@ -102,6 +104,7 @@ number:
     name: "Standalone Off Hour"
     id: off_hour_number
     entity_category: config
+    mode: box
     min_value: 0
     max_value: 23
     step: 1
@@ -116,6 +119,7 @@ number:
     name: "Standalone Off Minute"
     id: off_minute_number
     entity_category: config
+    mode: box
     min_value: 0
     max_value: 59
     step: 1
