@@ -15,16 +15,15 @@ globals:
     restore_value: true
     initial_value: "1320"
 
-  # Wi-Fi/API status tracking
-  - id: wifi_connected
-    type: bool
-    restore_value: no
-    initial_value: "false"
-
-  - id: wifi_off_minutes
+  - id: offline_minutes
     type: int
     restore_value: no
     initial_value: "0"
+
+  - id: max_offline_minutes
+    type: int
+    restore_value: no
+    initial_value: "120"
 
   # Internal flag: backup schedule currently active
   - id: backup_active
@@ -131,48 +130,34 @@ number:
         id(off_time_minutes) = hours * 60 + (int)x;
 
 ###############################################
-# Wi-Fi / API tracking
-###############################################
-
-wifi:
-  on_connect:
-    - lambda: |-
-        id(wifi_connected) = true;
-        id(wifi_off_minutes) = 0;
-        // When network/API is back, stop automatic backup control
-        id(backup_active) = false;
-
-  on_disconnect:
-    - lambda: |-
-        id(wifi_connected) = false;
-
-###############################################
 # Intervals:
-#   - check offline duration (5 min)
-#   - run daily scheduler (10 s)
+#   - check offline duration
+#   - run daily scheduler
 ###############################################
 
 interval:
-  # Check for 2h+ offline to activate backup schedule
+  # Check for max_offline_minutes offline to activate backup schedule
   - interval: 5min
     then:
-      - lambda: |-
-          bool online = id(wifi_connected);
-
-          // Also require ESPHome API (HA) to be connected
-          if (!id(api_status).state) {
-            online = false;
-          }
-
-          if (online) {
-            id(wifi_off_minutes) = 0;
-          } else {
-            id(wifi_off_minutes) += 5;
-            if (id(wifi_off_minutes) >= 120 && id(standalone_backup).state) {
-              // Start using the learned schedule automatically
-              id(backup_active) = true;
-            }
-          }
+      - if:
+          condition:
+            api.connected:
+          then:
+            - lambda: |-
+                id(offline_minutes) = 0;
+                id(backup_active) = false;
+          else:
+            - lambda: |-
+                id(offline_minutes) += 5;
+            - if:
+                condition:
+                  lambda: |-
+                    return id(offline_minutes) >= id(max_offline_minutes);
+                then:
+                  - lambda: |-
+                      if (id(standalone_backup).state) {
+                        id(backup_active) = true;
+                      }
 
   # Run daily schedule
   - interval: 10s
@@ -218,8 +203,8 @@ script:
           if (!id(standalone_backup).state) return;
           if (id(standalone_mode).state) return;
           if (id(backup_active)) return;
-          if (!id(wifi_connected)) return;
-          if (!id(api_status).state) return;
+          if (!api::global_api_server->is_connected()) return;
+
 
           auto t = id(ha_time).now();
           if (!t.is_valid()) return;
@@ -233,8 +218,8 @@ script:
           if (!id(standalone_backup).state) return;
           if (id(standalone_mode).state) return;
           if (id(backup_active)) return;
-          if (!id(wifi_connected)) return;
-          if (!id(api_status).state) return;
+          if (!api::global_api_server->is_connected()) return;
+
 
           auto t = id(ha_time).now();
           if (!t.is_valid()) return;
